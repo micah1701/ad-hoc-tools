@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Public Folder - Not Application Root</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            line-height: 1.6;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .info-box {
+            background-color: #e7f3ff;
+            border-left: 4px solid #007bff;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Public Folder Information</h1>
+        
+        <div class="info-box">
+            <strong>Note:</strong> This is the <code>/public</code> folder, not the application root.
+        </div>
+
+        <h2>Application Structure</h2>
+        <p>The main application root is located in the <code>/dist</code> folder once the build process is complete.</p>
+
+        <h2>Server Configuration</h2>
+        <p>This application uses a two-tier server setup:</p>
+        <ul>
+            <li><strong>Apache (Front-end):</strong> Domain requests resolve to Apache first</li>
+            <li>Apache uses <code>mod_rewrite</code> to serve static files from this <code>/public</code> folder</li>
+            <li>All other requests are proxied to the Node.js application</li>
+            <li><strong>Node.js (Back-end):</strong> Handles application logic on a specific port</li>
+        </ul>
+
+        <h2>Request Flow</h2>
+        <ol>
+            <li>Domain name resolves to Apache server</li>
+            <li>Apache checks if the requested file exists in <code>/public</code></li>
+            <li>If found: Apache serves the static file directly</li>
+            <li>If not found: Apache proxies the request to the Node.js application</li>
+        </ol>
+    </div>
+</body>
+</html>
