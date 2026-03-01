@@ -25,8 +25,8 @@ app.use(helmet({
   },
 })); // Security headers with CSP configuration
 app.use(cors()); // Enable CORS
-app.use(express.json()); // Parse JSON bodies
-app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
+app.use(express.json({ limit: '25mb' })); // Parse JSON bodies
+app.use(express.urlencoded({ extended: true, limit: '25mb' })); // Parse URL-encoded bodies
 app.use(morgan('dev')); // Request logging
 
 // Add request logging middleware for API requests

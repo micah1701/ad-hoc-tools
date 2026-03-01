@@ -1,0 +1,30 @@
+import { Router } from 'express';
+import { body } from 'express-validator';
+import { authenticate } from '../../core/middlewares/auth.middleware';
+import { validate } from '../../core/middlewares/validation.middleware';
+import { resizeImage, webOptimize } from '../controllers/image.controller';
+
+const imageRoutes = Router();
+
+// Validation rules
+const imageRequired = body('image')
+  .notEmpty().withMessage('image (base64) is required')
+  .isString().withMessage('image must be a string');
+
+const resizeValidation = [
+  imageRequired,
+  body('width').optional().isInt({ min: 1 }).withMessage('width must be a positive integer'),
+  body('height').optional().isInt({ min: 1 }).withMessage('height must be a positive integer'),
+  body('maintainAspectRatio').optional().isBoolean().withMessage('maintainAspectRatio must be a boolean'),
+];
+
+const webOptimizeValidation = [
+  imageRequired,
+  body('quality').optional().isInt({ min: 1, max: 100 }).withMessage('quality must be an integer between 1 and 100'),
+];
+
+// Routes (all require authentication)
+imageRoutes.post('/resize', authenticate, validate(resizeValidation), resizeImage);
+imageRoutes.post('/web-optimize', authenticate, validate(webOptimizeValidation), webOptimize);
+
+export default imageRoutes;

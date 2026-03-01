@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install sharp)",
+      "Bash(npm install --save-dev @types/sharp)",
+      "Bash(npm run build)"
+    ]
+  }
+}

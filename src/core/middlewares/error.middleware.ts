@@ -28,6 +28,8 @@ export const errorHandler = (
   if (err instanceof ApiError) {
     statusCode = err.statusCode;
     message = err.message;
+  } else if (err instanceof Error && err.message) {
+    message = err.message;
   }
   
   // Log error
