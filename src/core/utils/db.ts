@@ -218,7 +218,7 @@ class SupabaseDatabase implements DatabaseInterface {
     const tableName = this.getTableName('api_request_logs');
     const { data, error } = await this.client
       .from(tableName)
-      .select('request_uuid, method, url, status_code')
+      .select('request_uuid, created_at, method, url, status_code')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(100);

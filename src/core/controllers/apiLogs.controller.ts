@@ -28,7 +28,7 @@ export const getMyApiLogs = async (req: Request, res: Response, next: NextFuncti
     if (config.database.type === 'mysql') {
       const tableName = db.getTableName('api_request_logs');
       const [rows] = await db.execute(
-        `SELECT request_uuid, method, url, status_code FROM ${tableName} WHERE user_id = ? ORDER BY created_at DESC LIMIT 100`,
+        `SELECT request_uuid, created_at, method, url, status_code FROM ${tableName} WHERE user_id = ? ORDER BY created_at DESC LIMIT 100`,
         [userId]
       ) as [any[], any];
 
@@ -43,6 +43,7 @@ export const getMyApiLogs = async (req: Request, res: Response, next: NextFuncti
 
       logs = rows.map((row: any) => ({
         requestUuid: row.request_uuid,
+        createdAt: row.created_at,
         method: row.method,
         url: row.url,
         statusCode: row.status_code,
