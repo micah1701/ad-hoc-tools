@@ -8,6 +8,7 @@ import { config } from '../config';
 
 interface ApiLogSummary {
   requestUuid: string;
+  createdAt: Date;
   method: string;
   url: string;
   statusCode: number | null;
@@ -34,6 +35,7 @@ export const getMyApiLogs = async (req: Request, res: Response, next: NextFuncti
 
       logs = rows.map((row: any) => ({
         requestUuid: row.request_uuid,
+        createdAt: row.created_at,
         method: row.method,
         url: row.url,
         statusCode: row.status_code,
