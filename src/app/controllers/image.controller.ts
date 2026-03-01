@@ -21,6 +21,44 @@ function base64ToBuffer(input: string): Buffer {
 }
 
 /**
+ * Horizontal median filter — suppresses vertical stripe patterns (e.g. anti-forgery wavy lines
+ * on drivers licenses) while preserving vertical edges (face outline, nose, jawline).
+ * Window is 1px tall × (2*windowHalf+1)px wide, applied per channel.
+ */
+async function suppressVerticalStripes(buf: Buffer, windowHalf = 7): Promise<Buffer> {
+  const { data, info } = await sharp(buf).raw().toBuffer({ resolveWithObject: true });
+  const { width, height, channels } = info;
+  const src = new Uint8Array(data);
+  const dst = new Uint8Array(src.length);
+  const winSize = windowHalf * 2 + 1;
+  const mid = Math.floor(winSize / 2);
+  const samples = new Uint8Array(winSize);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      for (let c = 0; c < channels; c++) {
+        for (let i = 0; i < winSize; i++) {
+          const nx = Math.max(0, Math.min(width - 1, x - windowHalf + i));
+          samples[i] = src[(y * width + nx) * channels + c];
+        }
+        // Partial selection sort to find the median without a full sort
+        const tmp = samples.slice();
+        for (let i = 0; i <= mid; i++) {
+          let minIdx = i;
+          for (let j = i + 1; j < winSize; j++) {
+            if (tmp[j] < tmp[minIdx]) minIdx = j;
+          }
+          [tmp[i], tmp[minIdx]] = [tmp[minIdx], tmp[i]];
+        }
+        dst[(y * width + x) * channels + c] = tmp[mid];
+      }
+    }
+  }
+
+  return sharp(Buffer.from(dst), { raw: { width, height, channels } }).png().toBuffer();
+}
+
+/**
  * POST /image/resize
  * Body: { image: string (base64), width?: number, height?: number, maintainAspectRatio?: boolean }
  */
@@ -78,6 +116,7 @@ export const facePreprocess = async (req: Request, res: Response, next: NextFunc
       denoise = true,
       contrastEnhance = true,
       blurBackground = true,
+      grayscale = true,
     } = req.body;
 
     const paddingFraction = Math.min(1, Math.max(0, Number(padding)));
@@ -89,25 +128,46 @@ export const facePreprocess = async (req: Request, res: Response, next: NextFunc
     // distorts histograms enough to cause systematic missed detections.
     const faceBox = await detectLargestFace(inputBuffer);
 
-    // Helper: build the denoise+contrast Sharp pipeline for any source buffer
-    function buildEnhancePipeline(src: Buffer): sharp.Sharp {
-      let p = sharp(src);
+    // Helper: full enhancement pipeline applied to a cropped buffer
+    async function buildEnhancePipeline(src: Buffer): Promise<Buffer> {
+      // 1. Greyscale first — eliminates the chromatic component of color-printed
+      //    anti-forgery lines (rainbow gradients, hue-specific security printing)
+      let buf = grayscale
+        ? await sharp(src).greyscale().png().toBuffer()
+        : src;
+
+      // 2. Horizontal median — suppresses residual luminance variations from
+      //    vertical wavy lines while preserving vertical face edges
+      if (denoise) {
+        buf = await suppressVerticalStripes(buf);
+      }
+
+      // 3. Point-noise removal + mild edge recovery
+      let p = sharp(buf);
       if (denoise) {
         p = p
-          .median(3)                                        // suppress compression / hologram noise
-          .sharpen({ sigma: 0.8, m1: 0.5, m2: 2 });       // recover edge detail lost to median
+          .median(3)                                        // compression / hologram point noise
+          .sharpen({ sigma: 0.8, m1: 0.5, m2: 1 });       // mild edge recovery (m2 reduced from 2→1)
       }
+
+      // 4. Adaptive local contrast only — no global normalise() which amplifies
+      //    stripe contrast before CLAHE can work against it
       if (contrastEnhance) {
-        p = p
-          .normalise({ lower: 1, upper: 99 })              // stretch histogram, clip 1% outliers
-          .clahe({ width: 3, height: 3, maxSlope: 3 });    // adaptive local contrast (uneven lighting)
+        p = p.clahe({ width: 4, height: 4, maxSlope: 3 }); // larger tiles (3→4) = better local adaptation
       }
-      return p;
+
+      // 5. 3-channel greyscale stack — face networks expecting 3-channel input
+      //    receive identical R/G/B so they work without colour noise
+      if (grayscale) {
+        p = p.toColourspace('srgb');
+      }
+
+      return p.png().toBuffer();
     }
 
     if (!faceBox) {
       // Graceful fallback: apply preprocessing to the full image and return
-      const preprocessed = await buildEnhancePipeline(inputBuffer).png().toBuffer();
+      const preprocessed = await buildEnhancePipeline(inputBuffer);
       const meta = await sharp(preprocessed).metadata();
       const response: ApiResponse<ImageResult> = {
         success: true,
@@ -141,7 +201,7 @@ export const facePreprocess = async (req: Request, res: Response, next: NextFunc
       .toBuffer();
 
     // ── Step 3: Apply denoise + contrast enhancement to the cropped region ───
-    let cropBuffer = await buildEnhancePipeline(rawCrop).png().toBuffer();
+    let cropBuffer = await buildEnhancePipeline(rawCrop);
 
     // ── Step 4: Blur background (optional) ──────────────────────────────────
     if (blurBackground) {
