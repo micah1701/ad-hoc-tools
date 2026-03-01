@@ -53,5 +53,11 @@ export const config = {
   
   logging: {
     level: process.env.LOG_LEVEL || 'info'
+  },
+
+  ai: {
+    baseUrl: process.env.AI_BASE_URL || 'https://api.venice.ai/api/v1',
+    apiKey: process.env.AI_API_KEY || '',
+    defaultModel: process.env.AI_DEFAULT_MODEL || 'llama-3.3-70b',
   }
 };
