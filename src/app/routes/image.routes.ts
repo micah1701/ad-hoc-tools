@@ -30,6 +30,7 @@ const facePreprocessValidation = [
   body('contrastEnhance').optional().isBoolean().withMessage('contrastEnhance must be a boolean'),
   body('blurBackground').optional().isBoolean().withMessage('blurBackground must be a boolean'),
   body('grayscale').optional().isBoolean().withMessage('grayscale must be a boolean'),
+  body('useAi').optional().isBoolean().withMessage('useAi must be a boolean'),
 ];
 
 // Routes (all require authentication)

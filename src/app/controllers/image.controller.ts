@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import { HttpStatus, ApiResponse } from '../../core/types';
 import { ApiError } from '../../core/middlewares/error.middleware';
 import { detectLargestFace } from '../utils/faceDetection';
+import { aiCleanFaceImage } from './ai.controller';
 
 interface ImageResult {
   image: string;
@@ -117,6 +118,7 @@ export const facePreprocess = async (req: Request, res: Response, next: NextFunc
       contrastEnhance = true,
       blurBackground = true,
       grayscale = true,
+      useAi = false,
     } = req.body;
 
     const paddingFraction = Math.min(1, Math.max(0, Number(padding)));
@@ -200,17 +202,31 @@ export const facePreprocess = async (req: Request, res: Response, next: NextFunc
       .extract({ left: cropLeft, top: cropTop, width: cropWidth, height: cropHeight })
       .toBuffer();
 
+    // Face position within the crop (needed for AI clean and background blur)
+    const faceInCropLeft   = Math.round(faceBox.x) - cropLeft;
+    const faceInCropTop    = Math.round(faceBox.y) - cropTop;
+    const faceInCropWidth  = Math.min(Math.round(faceBox.width),  cropWidth  - faceInCropLeft);
+    const faceInCropHeight = Math.min(Math.round(faceBox.height), cropHeight - faceInCropTop);
+
+    // ── Step 2.5: AI overlay removal (optional) ──────────────────────────────
+    // Sends the raw crop to an image-edit model with an inpainting mask that
+    // protects the face region, asking the model to erase non-facial overlays
+    // (security patterns, holograms, watermarks) from the surrounding area.
+    let processBuffer = rawCrop;
+    if (useAi) {
+      processBuffer = await aiCleanFaceImage(rawCrop, {
+        left: faceInCropLeft,
+        top: faceInCropTop,
+        width: faceInCropWidth,
+        height: faceInCropHeight,
+      });
+    }
+
     // ── Step 3: Apply denoise + contrast enhancement to the cropped region ───
-    let cropBuffer = await buildEnhancePipeline(rawCrop);
+    let cropBuffer = await buildEnhancePipeline(processBuffer);
 
     // ── Step 4: Blur background (optional) ──────────────────────────────────
     if (blurBackground) {
-      // Face position within the crop (padding offsets are the face's origin)
-      const faceInCropLeft   = Math.round(faceBox.x) - cropLeft;
-      const faceInCropTop    = Math.round(faceBox.y) - cropTop;
-      const faceInCropWidth  = Math.min(Math.round(faceBox.width),  cropWidth  - faceInCropLeft);
-      const faceInCropHeight = Math.min(Math.round(faceBox.height), cropHeight - faceInCropTop);
-
       const blurredBg  = await sharp(cropBuffer).blur(20).toBuffer();
       const sharpFace  = await sharp(cropBuffer)
         .extract({ left: faceInCropLeft, top: faceInCropTop, width: faceInCropWidth, height: faceInCropHeight })

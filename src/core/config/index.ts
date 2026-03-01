@@ -59,5 +59,12 @@ export const config = {
     baseUrl: process.env.AI_BASE_URL || 'https://api.venice.ai/api/v1',
     apiKey: process.env.AI_API_KEY || '',
     defaultModel: process.env.AI_DEFAULT_MODEL || 'llama-3.3-70b',
+
+    // Image editing uses a separate client because providers like Venice.ai
+    // support chat completions but not the /images/edits (inpainting) endpoint.
+    // Point these at OpenAI (or any provider that implements images/edits).
+    imageBaseUrl: process.env.AI_IMAGE_BASE_URL || 'https://api.openai.com/v1',
+    imageApiKey: process.env.AI_IMAGE_API_KEY || process.env.AI_API_KEY || '',
+    imageModel: process.env.AI_IMAGE_MODEL || 'dall-e-2',
   }
 };
