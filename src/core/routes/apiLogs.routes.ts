@@ -13,6 +13,9 @@ const getApiLogValidation = [
     .withMessage('UUID must be a valid UUID format')
 ];
 
+// Get recent API logs for the authenticated user (protected)
+router.get('/', authenticate, apiLogsController.getMyApiLogs);
+
 // Get API log by UUID endpoint (protected)
 router.get(
   '/:uuid',

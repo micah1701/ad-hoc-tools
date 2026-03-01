@@ -6,6 +6,63 @@ import { logger } from '../utils/logger';
 import { db } from '../utils/db';
 import { config } from '../config';
 
+interface ApiLogSummary {
+  requestUuid: string;
+  method: string;
+  url: string;
+  statusCode: number | null;
+}
+
+/**
+ * GET /api-logs — returns the authenticated user's 100 most recent logs (summary fields only)
+ */
+export const getMyApiLogs = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.user) {
+      throw new ApiError(HttpStatus.UNAUTHORIZED, 'User not authenticated');
+    }
+
+    const userId = parseInt(req.user.id);
+    let logs: ApiLogSummary[];
+
+    if (config.database.type === 'mysql') {
+      const tableName = db.getTableName('api_request_logs');
+      const [rows] = await db.execute(
+        `SELECT request_uuid, method, url, status_code FROM ${tableName} WHERE user_id = ? ORDER BY created_at DESC LIMIT 100`,
+        [userId]
+      ) as [any[], any];
+
+      logs = rows.map((row: any) => ({
+        requestUuid: row.request_uuid,
+        method: row.method,
+        url: row.url,
+        statusCode: row.status_code,
+      }));
+    } else {
+      const rows = await (db as any).findRecentApiLogsByUserId(userId);
+
+      logs = rows.map((row: any) => ({
+        requestUuid: row.request_uuid,
+        method: row.method,
+        url: row.url,
+        statusCode: row.status_code,
+      }));
+    }
+
+    logger.info(`API logs list retrieved for user: ${req.user.id} (${logs.length} records)`);
+
+    const response: ApiResponse<ApiLogSummary[]> = {
+      success: true,
+      data: logs,
+      message: 'API logs retrieved successfully',
+    };
+
+    res.status(HttpStatus.OK).json(response);
+  } catch (error) {
+    next(error);
+  }
+};
+
 /**
  * Get API request log by UUID (only if user ID matches)
  */
