@@ -65,6 +65,6 @@ export const config = {
     // Point these at OpenAI (or any provider that implements images/edits).
     imageBaseUrl: process.env.AI_IMAGE_BASE_URL || 'https://api.openai.com/v1',
     imageApiKey: process.env.AI_IMAGE_API_KEY || process.env.AI_API_KEY || '',
-    imageModel: process.env.AI_IMAGE_MODEL || 'dall-e-2',
+    imageModel: process.env.AI_IMAGE_MODEL || 'gpt-image-1.5',
   }
 };

@@ -99,11 +99,14 @@ export async function aiCleanFaceImage(
   const origWidth  = meta.width  ?? 512;
   const origHeight = meta.height ?? 512;
 
-  // DALL-E 2 requires square RGBA PNG at exactly 256, 512, or 1024.
-  // Choose the smallest supported size that fits both dimensions.
-  const targetSize: 256 | 512 | 1024 =
-    origWidth <= 256 && origHeight <= 256 ? 256
-    : origWidth <= 512 && origHeight <= 512 ? 512
+  const isDallE2 = config.ai.imageModel === 'dall-e-2';
+
+  // dall-e-2: must use square PNG at exactly 256, 512, or 1024.
+  // GPT image models (gpt-image-1, gpt-image-1.5, gpt-image-1-mini): use 1024x1024.
+  const targetSize: 256 | 512 | 1024 = isDallE2
+    ? (origWidth <= 256 && origHeight <= 256 ? 256
+      : origWidth <= 512 && origHeight <= 512 ? 512
+      : 1024)
     : 1024;
 
   // Compute the scale + letterbox offsets used by sharp's `contain` resize so
@@ -114,7 +117,7 @@ export async function aiCleanFaceImage(
   const offsetX = Math.round((targetSize - scaledW) / 2);
   const offsetY = Math.round((targetSize - scaledH) / 2);
 
-  // Square RGBA PNG — both requirements for DALL-E 2 inpainting.
+  // Square RGBA PNG — required for image editing across all supported models.
   const pngBuffer = await sharp(imageBuffer)
     .resize(targetSize, targetSize, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .ensureAlpha()
@@ -172,7 +175,8 @@ export async function aiCleanFaceImage(
       +'ready for accurate facial embedding.',
       n: 1,
       size: `${targetSize}x${targetSize}` as '256x256' | '512x512' | '1024x1024',
-      response_format: 'b64_json',
+      // response_format is only supported by dall-e-2; GPT image models return base64 by default.
+      ...(isDallE2 && { response_format: 'b64_json' as const }),
     });
   } catch (err: any) {
     // Many OpenAI-compatible providers (e.g. Venice.ai) do not implement

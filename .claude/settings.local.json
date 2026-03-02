@@ -4,7 +4,9 @@
       "Bash(npm install sharp)",
       "Bash(npm install --save-dev @types/sharp)",
       "Bash(npm run build)",
-      "Bash(npx tsc --noEmit)"
+      "Bash(npx tsc --noEmit)",
+      "WebFetch(domain:platform.openai.com)",
+      "WebFetch(domain:developers.openai.com)"
     ]
   }
 }
