@@ -160,19 +160,7 @@ export async function aiCleanFaceImage(
       model: config.ai.imageModel,
       image: imageFile,
       mask: maskFile,
-      prompt:
-        `
-        This image is a cropped face photo taken from an identification card. 
-Clean and prepare it specifically for machine-based facial-recognition analysis.
-Your task:
-- Remove all non‑facial visual artifacts such as security lines, guilloche patterns, microprinting, holographic overlays, and background text.
-- Remove any unnatural lines, shapes, or patterns that do not match natural human facial features, hair, or skin tone.
-- Preserve the person’s actual face exactly. Do NOT generate or edit new facial geometry, expression, lighting, or textures.
-- You may smooth or slightly blur regions where artifacts are removed, rather than filling them with invented details.
-- Keep hair and clothing unchanged except for removing overlaid lines.
-- Do NOT add or imagine new objects (hands, timestamps, logos, borders, camera effects, etc.).
-- If unsure whether a pattern belongs to the person or the overlay, err on removing it rather than keeping it.
-- The final output should be a plain, uniform background with a clear, realistic human face suitable for facial embedding extraction.`,
+      prompt: 'This is a cropped face photo taken from an ID card. Clean and prepare it for facial-recognition analysis. Remove all visual artifacts such as wavy anti-counterfeiting lines, guilloche patterns, microprinting, holograms, text, or background graphics. Eliminate any unnatural lines or shapes that don’t match real human skin, hair, or facial features. Keep the person’s face, lighting, and proportions exactly as in the original—no new geometry or expressions. It’s acceptable to smooth or blur small areas where artifacts are removed instead of inventing detail. Keep existing hair and clothing; don’t add hands, timestamps, or borders. The final image should show the same unaltered face against a plain, unobtrusive background, ready for accurate facial embedding.',
       n: 1,
       size: `${targetSize}x${targetSize}` as '256x256' | '512x512' | '1024x1024',
       response_format: 'b64_json',
