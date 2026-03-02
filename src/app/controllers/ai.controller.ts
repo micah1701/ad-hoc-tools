@@ -169,10 +169,14 @@ export async function aiCleanFaceImage(
       +'microprinting, Ben Day dots, holograms, text, or background graphics. '
       +'Eliminate any unnatural lines or shapes that don’t match real human skin or facial features. '
       +'Keep the person’s face, lighting, and proportions exactly as in the original—no new geometry or '
-      +'expressions. It’s acceptable to smooth or blur small areas where artifacts are removed instead '
-      +'of inventing detail. Keep existing hair and clothing; don’t add hands, timestamps, or borders. '
-      +'The final image should show the same unaltered face against a plain, unobtrusive, solid background, '
-      +'ready for accurate facial embedding.',
+      +'expressions. Do not guess or estimate height or width of the face or any facial feature. '
+      +'It’s acceptable to smooth or blur small areas where artifacts are removed instead '
+      +'of inventing detail. Keep existing hair and clothing without any modifications; don’t add hands, timestamps, or borders. '
+      +'Although the image originated from an ID card, your final modified image should look like a new high resolution photo ready to be used for identification purposes. '
+      +'Do not add any elements that are not in the original image.'
+      +'The final image should show ONLY the same UNALTERED face against a plain, unobtrusive, solid background, '
+      +'ready for accurate facial embedding. The embeddings caluclated from this new image will be used to match other images '
+      +'of this same face so it must be as accurate to the original as possible.',
       n: 1,
       size: `${targetSize}x${targetSize}` as '256x256' | '512x512' | '1024x1024',
       // response_format is only supported by dall-e-2; GPT image models return base64 by default.
