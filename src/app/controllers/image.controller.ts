@@ -191,12 +191,17 @@ export const facePreprocess = async (req: Request, res: Response, next: NextFunc
     const imgH = rawMeta.height ?? 0;
 
     const padX = Math.round(faceBox.width * paddingFraction);
-    const padY = Math.round(faceBox.height * paddingFraction);
+    // Vertical padding is asymmetric: face detectors often clip the crown, so
+    // we add extra room above; below-chin we need neck/shoulder clearance too.
+    const padTop    = Math.round(faceBox.height * (paddingFraction + 0.35));
+    const padBottom = Math.round(faceBox.height * (paddingFraction + 0.15));
 
-    const cropLeft   = Math.max(0, Math.round(faceBox.x) - padX);
-    const cropTop    = Math.max(0, Math.round(faceBox.y) - padY);
-    const cropWidth  = Math.min(imgW - cropLeft, Math.round(faceBox.width)  + padX * 2);
-    const cropHeight = Math.min(imgH - cropTop,  Math.round(faceBox.height) + padY * 2);
+    const cropLeft   = Math.max(0,    Math.round(faceBox.x) - padX);
+    const cropTop    = Math.max(0,    Math.round(faceBox.y) - padTop);
+    const cropRight  = Math.min(imgW, Math.round(faceBox.x + faceBox.width)  + padX);
+    const cropBottom = Math.min(imgH, Math.round(faceBox.y + faceBox.height) + padBottom);
+    const cropWidth  = cropRight  - cropLeft;
+    const cropHeight = cropBottom - cropTop;
 
     const rawCrop = await sharp(inputBuffer)
       .extract({ left: cropLeft, top: cropTop, width: cropWidth, height: cropHeight })

@@ -101,25 +101,42 @@ export async function aiCleanFaceImage(
 
   const isDallE2 = config.ai.imageModel === 'dall-e-2';
 
-  // dall-e-2: must use square PNG at exactly 256, 512, or 1024.
-  // GPT image models (gpt-image-1, gpt-image-1.5, gpt-image-1-mini): use 1024x1024.
-  const targetSize: 256 | 512 | 1024 = isDallE2
-    ? (origWidth <= 256 && origHeight <= 256 ? 256
-      : origWidth <= 512 && origHeight <= 512 ? 512
-      : 1024)
-    : 1024;
+  // dall-e-2: square at exactly 256, 512, or 1024.
+  // gpt-image models: pick the closest supported aspect ratio — portrait (2:3 = 1024×1536),
+  // landscape (3:2 = 1536×1024), or square (1:1 = 1024×1024) — so the canvas wastes as
+  // little vertical space as possible and crown-to-neck headroom is preserved.
+  let targetW: number;
+  let targetH: number;
+  let sizeStr: string;
 
-  // Compute the scale + letterbox offsets used by sharp's `contain` resize so
-  // we can map faceRegion coordinates into the square canvas.
-  const scale   = Math.min(targetSize / origWidth, targetSize / origHeight);
+  if (isDallE2) {
+    const sq: 256 | 512 | 1024 = origWidth <= 256 && origHeight <= 256 ? 256
+      : origWidth <= 512 && origHeight <= 512 ? 512
+      : 1024;
+    targetW = targetH = sq;
+    sizeStr = `${sq}x${sq}`;
+  } else {
+    const ratio = origWidth / origHeight;
+    if (ratio < 0.8) {
+      targetW = 1024; targetH = 1536; // portrait 2:3
+    } else if (ratio > 1.25) {
+      targetW = 1536; targetH = 1024; // landscape 3:2
+    } else {
+      targetW = 1024; targetH = 1024; // square 1:1
+    }
+    sizeStr = `${targetW}x${targetH}`;
+  }
+
+  // Scale + letterbox offsets so faceRegion coordinates map into the canvas.
+  const scale   = Math.min(targetW / origWidth, targetH / origHeight);
   const scaledW = Math.round(origWidth  * scale);
   const scaledH = Math.round(origHeight * scale);
-  const offsetX = Math.round((targetSize - scaledW) / 2);
-  const offsetY = Math.round((targetSize - scaledH) / 2);
+  const offsetX = Math.round((targetW - scaledW) / 2);
+  const offsetY = Math.round((targetH - scaledH) / 2);
 
-  // Square RGBA PNG — required for image editing across all supported models.
+  // RGBA PNG at the target canvas dimensions.
   const pngBuffer = await sharp(imageBuffer)
-    .resize(targetSize, targetSize, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .resize(targetW, targetH, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .ensureAlpha()
     .png()
     .toBuffer();
@@ -135,7 +152,7 @@ export async function aiCleanFaceImage(
 
     const facePixels = Buffer.alloc(mWidth * mHeight * 4, 255);
     maskBuffer = await sharp({
-      create: { width: targetSize, height: targetSize, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+      create: { width: targetW, height: targetH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
     })
       .composite([{
         input: facePixels,
@@ -148,7 +165,7 @@ export async function aiCleanFaceImage(
   } else {
     // No region known — fully transparent mask lets the model clean the whole image
     maskBuffer = await sharp({
-      create: { width: targetSize, height: targetSize, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+      create: { width: targetW, height: targetH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
     }).png().toBuffer();
   }
 
@@ -164,18 +181,18 @@ export async function aiCleanFaceImage(
       image: imageFile,
       mask: maskFile,
       prompt: `This image is a cropped facial photo taken from an ID card. 
-The transparent area of the mask marks the regions containing surface artifacts.
+    The transparent area of the mask marks the regions containing surface artifacts.
 
-Perform a strictly conservative restoration limited to the masked regions only. 
-Remove unwanted overlays such as security lines, guilloche or wavy patterns, microprinting, holograms, watermarks, or any unnatural marks that differ from real skin or hair tones. 
-Do not modify or generate any new facial features, lighting, or proportions. 
-Ensure all geometry—eyes, nose, mouth, jawline, cheeks, forehead—matches the unmasked source exactly. 
-If artifact removal leaves gaps, blend nearby true pixels smoothly without synthesizing new anatomy. 
-Outside the masked regions, leave every pixel completely unchanged. 
-Do not invent or beautify clothing, hair, or background. 
-Provide a clean, realistic version of the same person with overlays removed, suitable for precise facial‑recognition embedding.`,
+    Perform a strictly conservative restoration limited to the masked regions only. 
+    Remove unwanted overlays such as security lines, guilloche or wavy patterns, microprinting, holograms, watermarks, or any unnatural marks that differ from real skin or hair tones. 
+    Do not modify or generate any new facial features, lighting, or proportions. 
+    Ensure all geometry—eyes, nose, mouth, jawline, cheeks, forehead—matches the unmasked source exactly. 
+    If artifact removal leaves gaps, blend nearby true pixels smoothly without synthesizing new anatomy. 
+    Outside the masked regions, leave every pixel completely unchanged. 
+    Do not invent or beautify clothing, hair, or background. 
+    Provide a clean, realistic version of the same person with overlays removed, suitable for precise facial‑recognition embedding.`,
       n: 1,
-      size: `${targetSize}x${targetSize}` as '256x256' | '512x512' | '1024x1024',
+      size: sizeStr as '256x256' | '512x512' | '1024x1024' | '1024x1536' | '1536x1024',
       // response_format is only supported by dall-e-2; GPT image models return base64 by default.
       ...(isDallE2 && { response_format: 'b64_json' as const }),
     });
