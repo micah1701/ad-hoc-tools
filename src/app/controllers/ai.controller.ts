@@ -96,32 +96,56 @@ export async function aiCleanFaceImage(
   faceRegion?: FaceRegion,
 ): Promise<Buffer> {
   const meta = await sharp(imageBuffer).metadata();
-  const width = meta.width ?? 512;
-  const height = meta.height ?? 512;
+  const origWidth  = meta.width  ?? 512;
+  const origHeight = meta.height ?? 512;
 
-  // Ensure the image is a clean PNG before sending
-  const pngBuffer = await sharp(imageBuffer).png().toBuffer();
+  // DALL-E 2 requires square RGBA PNG at exactly 256, 512, or 1024.
+  // Choose the smallest supported size that fits both dimensions.
+  const targetSize: 256 | 512 | 1024 =
+    origWidth <= 256 && origHeight <= 256 ? 256
+    : origWidth <= 512 && origHeight <= 512 ? 512
+    : 1024;
 
-  // Build inpainting mask: transparent everywhere (edit), opaque over face (keep)
+  // Compute the scale + letterbox offsets used by sharp's `contain` resize so
+  // we can map faceRegion coordinates into the square canvas.
+  const scale   = Math.min(targetSize / origWidth, targetSize / origHeight);
+  const scaledW = Math.round(origWidth  * scale);
+  const scaledH = Math.round(origHeight * scale);
+  const offsetX = Math.round((targetSize - scaledW) / 2);
+  const offsetY = Math.round((targetSize - scaledH) / 2);
+
+  // Square RGBA PNG — both requirements for DALL-E 2 inpainting.
+  const pngBuffer = await sharp(imageBuffer)
+    .resize(targetSize, targetSize, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .ensureAlpha()
+    .png()
+    .toBuffer();
+
+  // Build inpainting mask: transparent everywhere (edit), opaque over face (keep).
+  // Map faceRegion from original-crop space into the square-canvas space.
   let maskBuffer: Buffer;
   if (faceRegion) {
-    // Fill face bounding box with fully opaque pixels
-    const facePixels = Buffer.alloc(faceRegion.width * faceRegion.height * 4, 255);
+    const mLeft   = Math.round(faceRegion.left   * scale) + offsetX;
+    const mTop    = Math.round(faceRegion.top    * scale) + offsetY;
+    const mWidth  = Math.max(1, Math.round(faceRegion.width  * scale));
+    const mHeight = Math.max(1, Math.round(faceRegion.height * scale));
+
+    const facePixels = Buffer.alloc(mWidth * mHeight * 4, 255);
     maskBuffer = await sharp({
-      create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+      create: { width: targetSize, height: targetSize, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
     })
       .composite([{
         input: facePixels,
-        raw: { width: faceRegion.width, height: faceRegion.height, channels: 4 },
-        left: faceRegion.left,
-        top: faceRegion.top,
+        raw: { width: mWidth, height: mHeight, channels: 4 },
+        left: mLeft,
+        top: mTop,
       }])
       .png()
       .toBuffer();
   } else {
     // No region known — fully transparent mask lets the model clean the whole image
     maskBuffer = await sharp({
-      create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+      create: { width: targetSize, height: targetSize, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
     }).png().toBuffer();
   }
 
@@ -142,6 +166,7 @@ export async function aiCleanFaceImage(
         'graphics. Preserve the person\'s face, skin tone, hair, and facial features ' +
         'exactly as they appear — do not alter or regenerate any facial detail.',
       n: 1,
+      size: `${targetSize}x${targetSize}` as '256x256' | '512x512' | '1024x1024',
       response_format: 'b64_json',
     });
   } catch (err: any) {
@@ -163,5 +188,11 @@ export async function aiCleanFaceImage(
   const b64 = response.data?.[0]?.b64_json;
   if (!b64) throw new Error('AI image clean returned no image data');
 
-  return Buffer.from(b64, 'base64');
+  // OpenAI returns at targetSize×targetSize. Crop out the letterbox padding and
+  // resize back to original dimensions so callers' face coordinates stay valid.
+  return sharp(Buffer.from(b64, 'base64'))
+    .extract({ left: offsetX, top: offsetY, width: scaledW, height: scaledH })
+    .resize(origWidth, origHeight)
+    .png()
+    .toBuffer();
 }
