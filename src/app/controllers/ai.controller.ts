@@ -163,20 +163,17 @@ export async function aiCleanFaceImage(
       model: config.ai.imageModel,
       image: imageFile,
       mask: maskFile,
-      prompt: 'This is a cropped face photo taken from an ID card. '
-      +'Clean and prepare it for facial-recognition analysis. '
-      +'Remove all visual artifacts such as overlaid anti-counterfeiting lines, guilloche patterns, '
-      +'microprinting, Ben Day dots, holograms, text, or background graphics. '
-      +'Eliminate any unnatural lines or shapes that don’t match real human skin or facial features. '
-      +'Keep the person’s face, lighting, and proportions exactly as in the original—no new geometry or '
-      +'expressions. Do not guess or estimate height or width of the face or any facial feature. '
-      +'It’s acceptable to smooth or blur small areas where artifacts are removed instead '
-      +'of inventing detail. Keep existing hair and clothing without any modifications; don’t add hands, timestamps, or borders. '
-      +'Although the image originated from an ID card, your final modified image should look like a new high resolution photo ready to be used for identification purposes. '
-      +'Do not add any elements that are not in the original image.'
-      +'The final image should show ONLY the same UNALTERED face against a plain, unobtrusive, solid background, '
-      +'ready for accurate facial embedding. The embeddings caluclated from this new image will be used to match other images '
-      +'of this same face so it must be as accurate to the original as possible.',
+      prompt: `This image is a cropped facial photo taken from an ID card. 
+The transparent area of the mask marks the regions containing surface artifacts.
+
+Perform a strictly conservative restoration limited to the masked regions only. 
+Remove unwanted overlays such as security lines, guilloche or wavy patterns, microprinting, holograms, watermarks, or any unnatural marks that differ from real skin or hair tones. 
+Do not modify or generate any new facial features, lighting, or proportions. 
+Ensure all geometry—eyes, nose, mouth, jawline, cheeks, forehead—matches the unmasked source exactly. 
+If artifact removal leaves gaps, blend nearby true pixels smoothly without synthesizing new anatomy. 
+Outside the masked regions, leave every pixel completely unchanged. 
+Do not invent or beautify clothing, hair, or background. 
+Provide a clean, realistic version of the same person with overlays removed, suitable for precise facial‑recognition embedding.`,
       n: 1,
       size: `${targetSize}x${targetSize}` as '256x256' | '512x512' | '1024x1024',
       // response_format is only supported by dall-e-2; GPT image models return base64 by default.
