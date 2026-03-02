@@ -71,6 +71,38 @@ const redactSensitiveData = (obj: any): any => {
   return redacted;
 };
 
+const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1MB
+const LARGE_STRING_THRESHOLD = 100;
+const STRING_TRUNCATE_KEEP = 20;
+
+const truncateStringValue = (str: string): string => {
+  if (str.length <= LARGE_STRING_THRESHOLD) return str;
+  return `${str.slice(0, STRING_TRUNCATE_KEEP)}...${str.slice(-STRING_TRUNCATE_KEEP)}`;
+};
+
+const truncateObjectStrings = (obj: any): any => {
+  if (typeof obj === 'string') return truncateStringValue(obj);
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(truncateObjectStrings);
+  const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    result[key] = truncateObjectStrings(value);
+  }
+  return result;
+};
+
+/**
+ * If data serializes to over 1MB, truncates large string values within objects,
+ * or replaces the whole value with a placeholder for non-object types.
+ */
+const truncateLargeData = (data: any): any => {
+  if (data === null || data === undefined) return data;
+  const serialized = typeof data === 'string' ? data : JSON.stringify(data);
+  if (serialized.length <= MAX_BODY_SIZE) return data;
+  if (typeof data !== 'object') return '[Large Data Object]';
+  return truncateObjectStrings(data);
+};
+
 /**
  * Extracts user ID from JWT token without throwing errors
  */
@@ -227,7 +259,7 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
     method: req.method,
     url: req.originalUrl || req.url,
     headers: redactHeaders(req.headers),
-    requestBody: redactSensitiveData(req.body),
+    requestBody: redactSensitiveData(truncateLargeData(req.body)),
     ipAddress,
     userAgent: req.headers['user-agent'] || null,
     timestamp: new Date().toISOString()
@@ -253,7 +285,7 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
     if (!responseCaptured) {
       // Add requestId to the response body before logging
       const bodyWithRequestId = addRequestIdToResponse(body, req.requestUuid!);
-      responseBody = redactSensitiveData(bodyWithRequestId);
+      responseBody = redactSensitiveData(truncateLargeData(bodyWithRequestId));
       responseCaptured = true;
       
       // Send the response with requestId
@@ -269,14 +301,14 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
         // Try to parse as JSON, add requestId if it's an object, otherwise store as string
         let parsedBody = typeof body === 'string' ? JSON.parse(body) : body;
         const bodyWithRequestId = addRequestIdToResponse(parsedBody, req.requestUuid!);
-        responseBody = redactSensitiveData(bodyWithRequestId);
-        
+        responseBody = redactSensitiveData(truncateLargeData(bodyWithRequestId));
+
         // Send the response with requestId if it was modified
         if (bodyWithRequestId !== parsedBody) {
           return originalSend.call(this, JSON.stringify(bodyWithRequestId));
         }
       } catch {
-        responseBody = typeof body === 'string' ? body : String(body);
+        responseBody = truncateLargeData(typeof body === 'string' ? body : String(body));
       }
       responseCaptured = true;
     }
@@ -289,14 +321,14 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
       try {
         let parsedChunk = typeof chunk === 'string' ? JSON.parse(chunk) : chunk;
         const chunkWithRequestId = addRequestIdToResponse(parsedChunk, req.requestUuid!);
-        responseBody = redactSensitiveData(chunkWithRequestId);
-        
+        responseBody = redactSensitiveData(truncateLargeData(chunkWithRequestId));
+
         // Send the response with requestId if it was modified
         if (chunkWithRequestId !== parsedChunk) {
           return originalEnd.call(this, JSON.stringify(chunkWithRequestId), encoding);
         }
       } catch {
-        responseBody = typeof chunk === 'string' ? chunk : String(chunk);
+        responseBody = truncateLargeData(typeof chunk === 'string' ? chunk : String(chunk));
       }
       responseCaptured = true;
     }
