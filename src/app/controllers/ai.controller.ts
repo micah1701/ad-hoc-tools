@@ -161,10 +161,13 @@ export async function aiCleanFaceImage(
       image: imageFile,
       mask: maskFile,
       prompt:
-        'Remove all non-facial overlays from this face photo: ID card security patterns, ' +
-        'guilloche lines, holographic overlays, watermarks, printed text, and background ' +
-        'graphics. Preserve the person\'s face, skin tone, hair, and facial features ' +
-        'exactly as they appear — do not alter or regenerate any facial detail.',
+        `This is a photo of a person's face cropped from an ID card. 
+Clean the image for analytical use by a facial-recognition system. 
+Remove only the overlaid visual obstructions such as wavy anti-counterfeiting lines, holographic patterns, text, or watermarks. 
+Do NOT add, invent, or replace any element of the face or surrounding area. 
+Preserve all original facial geometry, proportions, landmarks, lighting, expression, and detail exactly. 
+Avoid adding fingers, hands, timestamps, edges, borders, or any objects not present in the source. 
+The output must look like the original face photo with all security patterns erased and a plain uniform background, ready for face embedding extraction—not stylized or re‑imagined.`,
       n: 1,
       size: `${targetSize}x${targetSize}` as '256x256' | '512x512' | '1024x1024',
       response_format: 'b64_json',
