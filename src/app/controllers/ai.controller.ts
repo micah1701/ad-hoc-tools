@@ -76,6 +76,111 @@ export const chat = async (req: Request, res: Response, next: NextFunction) => {
   }
 };
 
+// ── OCR: Driver's Licence / ID card ────────────────────────────────────────
+
+const EXTRACTION_PROMPT = `
+You are analyzing a US or Canadian driver's license card image.
+Extract the printed data fields. US and Canadian licenses have small AAMVA reference numbers printed before each field value (e.g., "1 SMITH", "2 JOHN ADAM", "3 01/15/1985").
+
+Extract values for these AAMVA field numbers if visible:
+- 1: last name
+- 2: given names (first and middle)
+- 3: date of birth
+- 4a: issue date
+- 4b: expiration date
+- 4d: license/ID number
+- 5: document ID
+- 8: address (full address)
+- 15: sex
+- 16: height
+- 18: eye color
+
+Return a JSON object with exactly these keys (omit any field you cannot confidently read):
+{
+  "last_name": "string",
+  "given_names": "string",
+  "dob": "YYYY-MM-DD",
+  "issue_date": "YYYY-MM-DD",
+  "expiration_date": "YYYY-MM-DD",
+  "license_number": "string",
+  "doc_id": "string",
+  "address": "string",
+  "sex": "M or F",
+  "height": "string",
+  "eye_color": "string",
+  "country": "US or CA",
+  "extraction_confidence": "high if 5+ fields found, partial if fewer"
+}
+
+US date format on card: MM/DD/YYYY. Canadian date format: YYYY/MM/DD.
+Normalize ALL dates to YYYY-MM-DD in your output.
+Return ONLY the JSON object, no explanation or markdown.
+`.trim();
+
+interface OcrIdResult {
+  data: Record<string, string>;
+  model: string;
+}
+
+/**
+ * POST /ai/ocr-id
+ * Body: { image: string (base64, with or without data URI prefix),
+ *         mediaType?: string (default "image/jpeg"),
+ *         model?: string }
+ */
+export const ocrId = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { image, mediaType = 'image/jpeg', model } = req.body;
+
+    // Strip optional data-URI prefix (e.g. "data:image/jpeg;base64,...")
+    const base64Data = (image as string).replace(/^data:[^;]+;base64,/, '');
+    const dataUri = `data:${mediaType};base64,${base64Data}`;
+
+    const completion = await openai.chat.completions.create({
+      model: model || config.ai.defaultModel,
+      max_tokens: 512,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: dataUri },
+            },
+            {
+              type: 'text',
+              text: EXTRACTION_PROMPT,
+            },
+          ],
+        },
+      ],
+    });
+
+    const rawText = completion.choices[0]?.message?.content ?? '';
+
+    // Strip any accidental markdown fences the model may wrap around the JSON
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new ApiError(HttpStatus.INTERNAL_SERVER_ERROR, 'No JSON found in AI response');
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    const response: ApiResponse<OcrIdResult> = {
+      success: true,
+      data: {
+        data: parsed,
+        model: completion.model,
+      },
+      message: 'ID OCR completed successfully',
+    };
+
+    res.status(HttpStatus.OK).json(response);
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ── AI image clean utility ──────────────────────────────────────────────────
 
 export interface FaceRegion {
