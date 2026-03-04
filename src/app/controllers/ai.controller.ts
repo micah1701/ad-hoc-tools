@@ -82,6 +82,8 @@ const EXTRACTION_PROMPT = `
 You are analyzing a US or Canadian driver's license card image.
 Extract the printed data fields. US and Canadian licenses have small AAMVA reference numbers printed before each field value (e.g., "1 SMITH", "2 JOHN ADAM", "3 01/15/1985").
 
+CRITICAL: Only extract values you can directly read from the image. Do NOT guess, infer, or fabricate any field. If a field is blurry, obscured, cut off, or simply not visible, omit it from the output entirely — do not fill it with a placeholder, example value, or assumption. It is far better to return fewer fields than to return incorrect data.
+
 Extract values for these AAMVA field numbers if visible:
 - 1: last name
 - 2: given names (first and middle)
@@ -95,7 +97,7 @@ Extract values for these AAMVA field numbers if visible:
 - 16: height
 - 18: eye color
 
-Return a JSON object with exactly these keys (omit any field you cannot confidently read):
+Return a JSON object with exactly these keys. Omit any key where the value is not clearly legible in the image:
 {
   "last_name": "string",
   "given_names": "string",
@@ -109,7 +111,7 @@ Return a JSON object with exactly these keys (omit any field you cannot confiden
   "height": "string",
   "eye_color": "string",
   "country": "US or CA",
-  "extraction_confidence": "high if 5+ fields found, partial if fewer"
+  "extraction_confidence": "high if 5+ fields found, partial if fewer, low if image quality is poor"
 }
 
 US date format on card: MM/DD/YYYY. Canadian date format: YYYY/MM/DD.
