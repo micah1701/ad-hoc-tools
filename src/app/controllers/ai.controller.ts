@@ -132,7 +132,9 @@ interface OcrIdResult {
  */
 export const ocrId = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { image, mediaType = 'image/jpeg', model = 'openai-gpt-4o-2024-11-20' } = req.body;
+    // model needs text+vision. When possible, use private: qwen3-vl-235b-a22b
+    // openai-gpt-4o-2024-11-20 works quick but is not private (and costs more)
+    const { image, mediaType = 'image/jpeg', model = 'qwen3-vl-235b-a22b' } = req.body;
 
     // Strip optional data-URI prefix (e.g. "data:image/jpeg;base64,...")
     const base64Data = (image as string).replace(/^data:[^;]+;base64,/, '');
