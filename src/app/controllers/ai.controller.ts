@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import { config } from '../../core/config';
 import { HttpStatus, ApiResponse } from '../../core/types';
 import { ApiError } from '../../core/middlewares/error.middleware';
+import { detectLargestFace } from '../utils/faceDetection';
 
 const openai = new OpenAI({
   baseURL: config.ai.baseUrl,
@@ -204,6 +205,15 @@ export async function aiCleanFaceImage(
   imageBuffer: Buffer,
   faceRegion?: FaceRegion,
 ): Promise<Buffer> {
+  // Pre-validate: if no faceRegion was provided (detection failed upstream),
+  // check whether there is actually a face before spending an API call.
+  // Without this, a fully-transparent mask gives the model total creative freedom
+  // and it will hallucinate an entirely made-up person.
+  if (!faceRegion) {
+    const detected = await detectLargestFace(imageBuffer);
+    if (!detected) return imageBuffer;
+  }
+
   const meta = await sharp(imageBuffer).metadata();
   const origWidth  = meta.width  ?? 512;
   const origHeight = meta.height ?? 512;
@@ -254,10 +264,20 @@ export async function aiCleanFaceImage(
   // Map faceRegion from original-crop space into the square-canvas space.
   let maskBuffer: Buffer;
   if (faceRegion) {
-    const mLeft   = Math.round(faceRegion.left   * scale) + offsetX;
-    const mTop    = Math.round(faceRegion.top    * scale) + offsetY;
-    const mWidth  = Math.max(1, Math.round(faceRegion.width  * scale));
-    const mHeight = Math.max(1, Math.round(faceRegion.height * scale));
+    // Expand the protection zone by 25% on each side so the model can't
+    // distort pixels at the face boundary (cause of "too fat/long" results).
+    const MASK_PAD   = 0.25;
+    const faceScaledW = Math.round(faceRegion.width  * scale);
+    const faceScaledH = Math.round(faceRegion.height * scale);
+    const padW = Math.round(faceScaledW * MASK_PAD);
+    const padH = Math.round(faceScaledH * MASK_PAD);
+
+    const mLeft   = Math.max(0,       Math.round(faceRegion.left * scale) + offsetX - padW);
+    const mTop    = Math.max(0,       Math.round(faceRegion.top  * scale) + offsetY - padH);
+    const mRight  = Math.min(targetW, Math.round(faceRegion.left * scale) + offsetX + faceScaledW + padW);
+    const mBottom = Math.min(targetH, Math.round(faceRegion.top  * scale) + offsetY + faceScaledH + padH);
+    const mWidth  = Math.max(1, mRight - mLeft);
+    const mHeight = Math.max(1, mBottom - mTop);
 
     const facePixels = Buffer.alloc(mWidth * mHeight * 4, 255);
     maskBuffer = await sharp({
@@ -289,17 +309,22 @@ export async function aiCleanFaceImage(
       model: config.ai.imageModel,
       image: imageFile,
       mask: maskFile,
-      prompt: `This image is a cropped facial photo taken from an ID card. 
-    The transparent area of the mask marks the regions containing surface artifacts.
+      prompt: `This image is a cropped facial photo taken from an ID card.
+    The transparent area of the mask marks regions that may contain surface artifacts.
+    The opaque area marks the protected face region — do not modify those pixels in any way.
 
-    Perform a strictly conservative restoration limited to the masked regions only. 
-    Remove unwanted overlays such as security lines, guilloche or wavy patterns, microprinting, holograms, watermarks, or any unnatural marks that differ from real skin or hair tones. 
-    Do not modify or generate any new facial features, lighting, or proportions. 
-    Ensure all geometry—eyes, nose, mouth, jawline, cheeks, forehead—matches the unmasked source exactly. 
-    If artifact removal leaves gaps, blend nearby true pixels smoothly without synthesizing new anatomy. 
-    Outside the masked regions, leave every pixel completely unchanged. 
-    Do not invent or beautify clothing, hair, or background. 
-    Provide a clean, realistic version of the same person with overlays removed, suitable for precise facial‑recognition embedding.`,
+    Perform a strictly conservative restoration limited to the transparent masked regions only.
+    Remove unwanted overlays such as security lines, guilloche or wavy patterns, microprinting, holograms, watermarks, or any unnatural marks that differ from real skin or hair tones.
+
+    CRITICAL GEOMETRY RULE: Do not alter face shape, proportions, skin texture, or geometry in any way. The face in the protected region must be geometrically identical to the input — same width, height, eye spacing, jawline, and all facial features. Any change to face geometry makes the result unusable.
+    Do not modify or generate any new facial features, lighting, or proportions.
+    Ensure all geometry—eyes, nose, mouth, jawline, cheeks, forehead—matches the unmasked source exactly.
+    If artifact removal leaves gaps, blend nearby true pixels smoothly without synthesizing new anatomy.
+    Outside the masked regions, leave every pixel completely unchanged.
+    Do not invent or beautify clothing, hair, or background.
+
+    If no clear pre-existing human face is visible in the protected region, make only minimal changes to the masked area using surrounding context — do not generate or infer any facial features.
+    Provide a clean, realistic version of the same person with overlays removed, suitable for precise facial-recognition embedding.`,
       n: 1,
       size: sizeStr as '256x256' | '512x512' | '1024x1024' | '1024x1536' | '1536x1024',
       // response_format is only supported by dall-e-2; GPT image models return base64 by default.
@@ -324,11 +349,28 @@ export async function aiCleanFaceImage(
   const b64 = response.data?.[0]?.b64_json;
   if (!b64) throw new Error('AI image clean returned no image data');
 
-  // OpenAI returns at targetSize×targetSize. Crop out the letterbox padding and
-  // resize back to original dimensions so callers' face coordinates stay valid.
-  return sharp(Buffer.from(b64, 'base64'))
+  // Crop out the letterbox padding and resize back to original dimensions
+  // so callers' face coordinates stay valid.
+  const resultBuffer = await sharp(Buffer.from(b64, 'base64'))
     .extract({ left: offsetX, top: offsetY, width: scaledW, height: scaledH })
     .resize(origWidth, origHeight)
     .png()
     .toBuffer();
+
+  // Post-validate: reject the result if the AI hallucinated a face in a different
+  // location or removed the face entirely — both indicate an unusable output.
+  const resultFace = await detectLargestFace(resultBuffer);
+  if (!resultFace) return imageBuffer;
+
+  if (faceRegion) {
+    const origCx = faceRegion.left + faceRegion.width  / 2;
+    const origCy = faceRegion.top  + faceRegion.height / 2;
+    const resCx  = resultFace.x   + resultFace.width   / 2;
+    const resCy  = resultFace.y   + resultFace.height  / 2;
+    const drift  = Math.hypot(resCx - origCx, resCy - origCy);
+    const maxDrift = Math.max(faceRegion.width, faceRegion.height) * 0.3;
+    if (drift > maxDrift) return imageBuffer;
+  }
+
+  return resultBuffer;
 }
